@@ -561,6 +561,105 @@ class TestPhase3QMLSpecialization:
         assert vqc.estimated_fidelity <= base.estimated_fidelity
 
 
+class TestPhase4Ecosystem:
+    """Tests for Phase 4 — Ecosystem."""
+
+    def test_latex_export(self):
+        """Test LaTeX table export."""
+        from qiskit import QuantumCircuit
+        from qpu_estimator import QPUEstimator, ReportExporter
+
+        circuit = QuantumCircuit(2)
+        circuit.h(0)
+        circuit.cx(0, 1)
+        circuit.measure_all()
+
+        estimator = QPUEstimator(use_live=False, use_real_transpiler=False)
+        reports = estimator.compare_backends(
+            circuit, ["ibm_heron", "ibm_brisbane"]
+        )
+
+        latex = ReportExporter.to_latex_table(reports, "Test Results")
+        assert r"\begin{table}" in latex
+        assert r"\end{table}" in latex
+        assert "ibm_heron" in latex
+        assert "ibm_brisbane" in latex
+
+    def test_csv_export(self):
+        """Test CSV export."""
+        from qiskit import QuantumCircuit
+        from qpu_estimator import QPUEstimator, ReportExporter
+
+        circuit = QuantumCircuit(2)
+        circuit.h(0)
+        circuit.cx(0, 1)
+        circuit.measure_all()
+
+        estimator = QPUEstimator(use_live=False, use_real_transpiler=False)
+        reports = estimator.compare_backends(
+            circuit, ["ibm_heron"]
+        )
+
+        csv = ReportExporter.to_csv(reports)
+        assert "backend" in csv
+        assert "ibm_heron" in csv
+        assert len(csv.split("\n")) >= 2  # header + data
+
+    def test_markdown_export(self):
+        """Test Markdown table export."""
+        from qiskit import QuantumCircuit
+        from qpu_estimator import QPUEstimator, ReportExporter
+
+        circuit = QuantumCircuit(2)
+        circuit.h(0)
+        circuit.cx(0, 1)
+        circuit.measure_all()
+
+        estimator = QPUEstimator(use_live=False, use_real_transpiler=False)
+        reports = estimator.compare_backends(
+            circuit, ["ibm_heron"]
+        )
+
+        md = ReportExporter.to_markdown(reports)
+        assert "| Backend |" in md
+        assert "ibm_heron" in md
+
+    def test_plugin_registry(self):
+        """Test plugin registration and retrieval."""
+        from qpu_estimator.plugin import PluginRegistry, IonQPlugin
+
+        registry = PluginRegistry()
+        plugin = IonQPlugin()
+        registry.register(plugin)
+
+        assert "ionq_harmony" in registry.list_plugins()
+
+        profile = registry.get_profile("ionq_harmony")
+        assert profile.name == "ionq_harmony"
+        assert profile.num_qubits == 11
+
+    def test_plugin_unknown(self):
+        """Test plugin registry error for unknown plugin."""
+        from qpu_estimator.plugin import PluginRegistry
+
+        registry = PluginRegistry()
+        with pytest.raises(ValueError):
+            registry.get_profile("unknown")
+
+    def test_empty_export(self):
+        """Test export with empty reports."""
+        from qpu_estimator.export import ReportExporter
+
+        latex = ReportExporter.to_latex_table([])
+        assert "No reports" in latex
+
+        csv = ReportExporter.to_csv([])
+        assert csv == ""
+
+        md = ReportExporter.to_markdown([])
+        assert "No reports" in md
+
+
 class TestPhase1Integration:
     """Integration tests for Phase 1 features."""
 

@@ -37,15 +37,20 @@
 - [x] Batch evaluation cost for training loops
 - [x] Fidelity degradation model for repeated evaluations
 
-## Phase 4 — Ecosystem
+## Phase 4 — Ecosystem (✅ COMPLETE)
 
-- [ ] Web dashboard for visual comparison
-- [ ] CI integration: fail if estimated cost exceeds budget
-- [ ] Export to LaTeX tables for papers
-- [ ] Plugin system for custom backends (IonQ, Rigetti, etc.)
+- [x] LaTeX table export for papers
+- [x] CSV export for data analysis
+- [x] Markdown export for documentation
+- [x] Plugin system for custom backends (IonQ example)
+- [x] Simple web dashboard (HTTP server)
+- [ ] CI integration: fail if estimated cost exceeds budget — backlog
 
 ## Backlog
 
-- Caching backend profiles to avoid repeated API calls
-- Parallel estimation across multiple backends
-- Historical tracking: store estimations vs actual execution metrics
+- [ ] Queue time estimation (historical data + heuristics)
+- [ ] IBM credit pricing table (manual + scrape fallback)
+- [ ] CI integration: budget gate
+- [ ] Caching backend profiles to avoid repeated API calls
+- [ ] Parallel estimation across multiple backends
+- [ ] Historical tracking: store estimations vs actual execution metrics

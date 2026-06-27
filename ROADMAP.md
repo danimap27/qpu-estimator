@@ -11,12 +11,14 @@
 - [x] Unit tests with pytest
 - [x] GitHub repo + initial README
 
-## Phase 1 — IBM Integration
+## Phase 1 — IBM Integration (✅ COMPLETE)
 
-- [ ] Live backend profiling via `qiskit-ibm-runtime`
-- [ ] Real transpilation with `qiskit.transpiler`
-- [ ] Dynamic error rate fetching from IBM calibration data
-- [ ] IBM credit pricing table (manual + scrape fallback)
+- [x] Live backend profiling via `qiskit-ibm-runtime`
+- [x] Real transpilation with `qiskit.transpiler`
+- [x] Dynamic error rate fetching from IBM calibration data (T1, T2, gate errors, readout)
+- [x] Fallback to mock profiles when live data unavailable
+- [x] Multi-backend comparison with live data
+- [ ] IBM credit pricing table (manual + scrape fallback) — moved to Phase 2
 
 ## Phase 2 — Advanced Estimation
 

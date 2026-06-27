@@ -1,5 +1,7 @@
 """Main orchestrator: QPUEstimator."""
 
+from typing import Optional
+
 from qiskit import QuantumCircuit
 
 from .analyzer import CircuitAnalyzer
@@ -28,11 +30,18 @@ class QPUEstimator:
         print(report)
     """
 
-    def __init__(self, config: EstimationConfig | None = None):
+    def __init__(
+        self,
+        config: EstimationConfig | None = None,
+        use_live: bool = True,
+        ibm_token: Optional[str] = None,
+        use_real_transpiler: bool = True,
+    ):
         self.analyzer = CircuitAnalyzer()
-        self.profiler = BackendProfiler()
+        self.profiler = BackendProfiler(use_live=use_live, token=ibm_token)
         self.transpiler = TranspilationEstimator()
         self.resource_estimator = ResourceEstimator(config)
+        self.use_real_transpiler = use_real_transpiler
 
     def estimate(
         self, circuit: QuantumCircuit, backend_name: str
@@ -46,7 +55,10 @@ class QPUEstimator:
 
         # Step 3: estimate transpilation overhead
         swap_count, transpiled_depth, new_two_qubit = self.transpiler.estimate(
-            circuit_profile, backend_profile
+            circuit,
+            circuit_profile,
+            backend_profile,
+            use_real_transpiler=self.use_real_transpiler,
         )
 
         # Step 4: estimate resources
@@ -66,3 +78,7 @@ class QPUEstimator:
         """Estimate resources across multiple backends and return sorted by fidelity."""
         reports = [self.estimate(circuit, name) for name in backend_names]
         return sorted(reports, key=lambda r: r.estimated_fidelity, reverse=True)
+
+    def list_live_backends(self) -> list[str]:
+        """Return all live backends available on IBM Quantum."""
+        return self.profiler.list_live_backends()

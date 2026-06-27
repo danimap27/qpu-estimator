@@ -20,12 +20,14 @@
 - [x] Multi-backend comparison with live data
 - [ ] IBM credit pricing table (manual + scrape fallback) — moved to Phase 2
 
-## Phase 2 — Advanced Estimation
+## Phase 2 — Advanced Estimation (✅ COMPLETE)
 
-- [ ] Noise-aware fidelity prediction (depolarizing + thermal relaxation)
-- [ ] Shot optimization for desired precision (Hoeffding / Chernoff bounds)
-- [ ] Multi-backend comparison (rank backends by estimated fidelity/cost)
-- [ ] Queue time estimation (historical data + heuristics)
+- [x] Noise-aware fidelity prediction (depolarizing + thermal relaxation + readout)
+- [x] Shot optimization with Hoeffding / Chernoff / Clopper-Pearson bounds
+- [x] Configurable noise channels (toggle depolarizing, thermal, readout)
+- [x] Precision-confidence tradeoff for shot count
+- [ ] Multi-backend comparison (rank backends by estimated fidelity/cost) — already in Phase 1
+- [ ] Queue time estimation (historical data + heuristics) — moved to backlog
 
 ## Phase 3 — QML Specialization
 

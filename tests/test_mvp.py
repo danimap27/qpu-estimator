@@ -284,6 +284,157 @@ class TestQPUEstimator:
         assert isinstance(backends, list)
 
 
+class TestPhase2AdvancedEstimation:
+    """Tests for Phase 2 — Advanced Estimation."""
+
+    def test_noise_aware_fidelity_vs_simple(self):
+        """Noise-aware fidelity should generally be lower than simple model."""
+        from qpu_estimator.models import CircuitProfile, BackendProfile
+        from qpu_estimator.noise_model import NoiseAwareFidelityEstimator
+
+        circuit = CircuitProfile(
+            num_qubits=2,
+            total_gates=3,
+            single_qubit_gates=2,
+            two_qubit_gates=1,
+            depth=3,
+            measurement_ops=2,
+            parameterized_gates=0,
+        )
+        backend = BackendProfile(
+            name="mock",
+            num_qubits=2,
+            basis_gates=["cx"],
+            coupling_map=[[0, 1]],
+            t1_times_us=[50.0, 50.0],
+            t2_times_us=[30.0, 30.0],
+            single_qubit_error=[0.001, 0.001],
+            two_qubit_error=[0.005],
+            readout_error=[0.02, 0.02],
+            gate_times_ns={"cx": 500},
+        )
+
+        noise_estimator = NoiseAwareFidelityEstimator()
+        noise_fidelity = noise_estimator.estimate(circuit, backend, 5, 0, 1)
+
+        # Simple model (no thermal relaxation)
+        sq_fid = (1 - 0.001) ** 2
+        tq_fid = (1 - 0.005) ** 1
+        ro_fid = (1 - 0.02) ** 2
+        simple_fidelity = sq_fid * tq_fid * ro_fid
+
+        # Noise-aware should be lower due to thermal relaxation
+        assert noise_fidelity <= simple_fidelity
+        assert 0.0 <= noise_fidelity <= 1.0
+
+    def test_shot_optimizer_methods(self):
+        """Test different shot optimization methods."""
+        from qpu_estimator.shot_optimizer import ShotOptimizer, ShotConfig
+
+        config = ShotConfig(target_precision=0.01, confidence=0.95)
+        optimizer = ShotOptimizer(config)
+
+        hoeffding = optimizer.optimal_shots("hoeffding")
+        chernoff = optimizer.optimal_shots("chernoff")
+        clopper = optimizer.optimal_shots("clopper-pearson")
+
+        assert hoeffding >= 100
+        assert chernoff >= 100
+        assert clopper >= 100
+
+        # All methods should give reasonable shot counts within bounds
+        assert hoeffding <= config.max_shots
+        assert chernoff <= config.max_shots
+        assert clopper <= config.max_shots
+
+    def test_shot_precision_tradeoff(self):
+        """Higher precision should require more shots."""
+        from qpu_estimator.shot_optimizer import ShotOptimizer, ShotConfig
+
+        loose = ShotConfig(target_precision=0.05, confidence=0.95)
+        tight = ShotConfig(target_precision=0.01, confidence=0.95)
+
+        loose_shots = ShotOptimizer(loose).optimal_shots("hoeffding")
+        tight_shots = ShotOptimizer(tight).optimal_shots("hoeffding")
+
+        assert tight_shots > loose_shots
+
+    def test_noise_config_toggles(self):
+        """Test that noise config toggles affect fidelity."""
+        from qpu_estimator.models import CircuitProfile, BackendProfile
+        from qpu_estimator.noise_model import NoiseAwareFidelityEstimator, NoiseConfig
+
+        circuit = CircuitProfile(
+            num_qubits=2,
+            total_gates=3,
+            single_qubit_gates=2,
+            two_qubit_gates=1,
+            depth=3,
+            measurement_ops=2,
+            parameterized_gates=0,
+        )
+        backend = BackendProfile(
+            name="mock",
+            num_qubits=2,
+            basis_gates=["cx"],
+            coupling_map=[[0, 1]],
+            t1_times_us=[50.0, 50.0],
+            t2_times_us=[30.0, 30.0],
+            single_qubit_error=[0.001, 0.001],
+            two_qubit_error=[0.005],
+            readout_error=[0.02, 0.02],
+            gate_times_ns={"cx": 500},
+        )
+
+        full = NoiseAwareFidelityEstimator(NoiseConfig(True, True, True))
+        no_thermal = NoiseAwareFidelityEstimator(NoiseConfig(True, False, True))
+
+        full_fid = full.estimate(circuit, backend, 5, 0, 1)
+        no_thermal_fid = no_thermal.estimate(circuit, backend, 5, 0, 1)
+
+        # Without thermal relaxation, fidelity should be higher
+        assert no_thermal_fid >= full_fid
+
+    def test_estimator_with_noise_aware_config(self):
+        """Test ResourceEstimator with noise-aware fidelity enabled."""
+        from qpu_estimator.models import CircuitProfile, BackendProfile
+        from qpu_estimator.estimator import ResourceEstimator, EstimationConfig
+
+        circuit = CircuitProfile(
+            num_qubits=2,
+            total_gates=3,
+            single_qubit_gates=2,
+            two_qubit_gates=1,
+            depth=3,
+            measurement_ops=2,
+            parameterized_gates=0,
+        )
+        backend = BackendProfile(
+            name="mock",
+            num_qubits=2,
+            basis_gates=["cx"],
+            coupling_map=[[0, 1]],
+            t1_times_us=[100.0, 100.0],
+            t2_times_us=[80.0, 80.0],
+            single_qubit_error=[0.0001, 0.0001],
+            two_qubit_error=[0.001],
+            readout_error=[0.01, 0.01],
+            gate_times_ns={"cx": 100},
+        )
+
+        config = EstimationConfig(
+            use_noise_aware_fidelity=True,
+            shot_method="chernoff",
+        )
+        estimator = ResourceEstimator(config)
+        report = estimator.estimate(circuit, backend, 5, 0, 1)
+
+        assert report.estimated_fidelity > 0
+        assert report.optimal_shots >= 100
+        assert "Noise-aware" in str(report.notes)
+        assert "chernoff" in str(report.notes)
+
+
 class TestPhase1Integration:
     """Integration tests for Phase 1 features."""
 

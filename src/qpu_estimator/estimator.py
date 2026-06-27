@@ -4,17 +4,21 @@ import math
 from dataclasses import dataclass
 
 from .models import CircuitProfile, BackendProfile, EstimationReport
+from .noise_model import NoiseAwareFidelityEstimator, NoiseConfig
+from .shot_optimizer import ShotOptimizer, ShotConfig
 
 
 @dataclass
 class EstimationConfig:
     """Tunable parameters for resource estimation."""
 
-    target_precision: float = 0.01          # For shot estimation
-    confidence: float = 0.95                # Hoeffding bound confidence
+    target_precision: float = 0.01  # For shot estimation
+    confidence: float = 0.95  # Hoeffding bound confidence
     min_shots: int = 100
     max_shots: int = 100_000
-    ibm_credit_per_second: float = 2.5      # Mock pricing (Phase 1: real table)
+    ibm_credit_per_second: float = 2.5  # Mock pricing (Phase 1: real table)
+    use_noise_aware_fidelity: bool = True
+    shot_method: str = "hoeffding"  # hoeffding, chernoff, clopper-pearson
 
 
 class ResourceEstimator:
@@ -22,6 +26,21 @@ class ResourceEstimator:
 
     def __init__(self, config: EstimationConfig | None = None):
         self.config = config or EstimationConfig()
+        self.noise_estimator = NoiseAwareFidelityEstimator(
+            NoiseConfig(
+                include_depolarizing=True,
+                include_thermal_relaxation=True,
+                include_readout=True,
+            )
+        )
+        self.shot_optimizer = ShotOptimizer(
+            ShotConfig(
+                target_precision=self.config.target_precision,
+                confidence=self.config.confidence,
+                min_shots=self.config.min_shots,
+                max_shots=self.config.max_shots,
+            )
+        )
 
     def estimate(
         self,
@@ -40,12 +59,23 @@ class ResourceEstimator:
         )
 
         # 2. Optimal shots
-        optimal_shots = self._estimate_shots(circuit_profile)
+        self.shot_optimizer.config.target_precision = self.config.target_precision
+        self.shot_optimizer.config.confidence = self.config.confidence
+        optimal_shots = self.shot_optimizer.optimal_shots(self.config.shot_method)
 
-        # 3. Fidelity
-        fidelity = self._estimate_fidelity(
-            circuit_profile, backend_profile, new_two_qubit_count, swap_count
-        )
+        # 3. Fidelity (noise-aware or simple)
+        if self.config.use_noise_aware_fidelity:
+            fidelity = self.noise_estimator.estimate(
+                circuit_profile,
+                backend_profile,
+                transpiled_depth,
+                swap_count,
+                new_two_qubit_count,
+            )
+        else:
+            fidelity = self._simple_fidelity(
+                circuit_profile, backend_profile, new_two_qubit_count, swap_count
+            )
 
         # 4. Credits
         credits = self._estimate_credits(exec_time_ms, optimal_shots)
@@ -57,6 +87,9 @@ class ResourceEstimator:
             notes.append("WARNING: estimated fidelity below 50%")
         if transpiled_depth > backend_profile.num_qubits * 2:
             notes.append("WARNING: circuit depth may exceed coherence limits")
+        if self.config.use_noise_aware_fidelity:
+            notes.append("Noise-aware fidelity model (depolarizing + thermal + readout)")
+        notes.append(f"Shot optimization method: {self.config.shot_method}")
 
         return EstimationReport(
             backend_name=backend_profile.name,
@@ -74,55 +107,35 @@ class ResourceEstimator:
         self, circuit_profile: CircuitProfile, backend: BackendProfile, depth: int
     ) -> float:
         """Estimate circuit execution time in milliseconds."""
-        # Sum gate times per layer (depth)
         avg_layer_time = 0.0
         for gate_name, duration_ns in backend.gate_times_ns.items():
-            # Rough: assume each layer has a mix of gates
             avg_layer_time += duration_ns / len(backend.gate_times_ns)
 
-        # Measurement time (roughly 1 us per qubit)
         measurement_time_ns = circuit_profile.measurement_ops * 1000
-
         total_ns = depth * avg_layer_time + measurement_time_ns
-        return total_ns / 1e6  # convert to ms
+        return total_ns / 1e6
 
-    def _estimate_shots(self, circuit_profile: CircuitProfile) -> int:
-        """Estimate optimal shot count using Hoeffding bound."""
-        # For a single binary observable, Hoeffding: n >= ln(2/delta)/(2*eps^2)
-        eps = self.config.target_precision
-        delta = 1 - self.config.confidence
-        n = math.ceil(math.log(2 / delta) / (2 * eps * eps))
-        return max(self.config.min_shots, min(n, self.config.max_shots))
-
-    def _estimate_fidelity(
+    def _simple_fidelity(
         self,
         circuit_profile: CircuitProfile,
         backend: BackendProfile,
         two_qubit_count: int,
         swap_count: int,
     ) -> float:
-        """Estimate circuit fidelity using a simple product model."""
-        # Single-qubit gate fidelity
+        """Simple product fidelity model (MVP fallback)."""
         avg_sq_error = sum(backend.single_qubit_error) / len(backend.single_qubit_error)
         sq_fidelity = (1 - avg_sq_error) ** circuit_profile.single_qubit_gates
 
-        # Two-qubit gate fidelity
         avg_tq_error = sum(backend.two_qubit_error) / len(backend.two_qubit_error)
         tq_fidelity = (1 - avg_tq_error) ** two_qubit_count
 
-        # Readout fidelity
         avg_ro_error = sum(backend.readout_error) / len(backend.readout_error)
         ro_fidelity = (1 - avg_ro_error) ** circuit_profile.measurement_ops
 
-        # SWAP overhead: each swap is 3 CNOTs, already counted in two_qubit_count
-        # but we add a small penalty for routing complexity
         swap_penalty = max(0.0, 1.0 - swap_count * 0.005)
-
-        total_fidelity = sq_fidelity * tq_fidelity * ro_fidelity * swap_penalty
-        return max(0.0, min(1.0, total_fidelity))
+        return max(0.0, min(1.0, sq_fidelity * tq_fidelity * ro_fidelity * swap_penalty))
 
     def _estimate_credits(self, exec_time_ms: float, shots: int) -> float:
         """Estimate IBM Runtime credits (mock pricing)."""
-        # Rough model: credits scale with time * shots
         time_seconds = exec_time_ms / 1000
         return time_seconds * shots * self.config.ibm_credit_per_second / 1000

@@ -435,6 +435,132 @@ class TestPhase2AdvancedEstimation:
         assert "chernoff" in str(report.notes)
 
 
+class TestPhase3QMLSpecialization:
+    """Tests for Phase 3 — QML Specialization."""
+
+    def test_vqc_training_estimation(self):
+        """Test VQC training cost estimation."""
+        from qiskit import QuantumCircuit
+        from qpu_estimator.qml_estimator import QMLEstimator, VQCEstimationConfig
+
+        circuit = QuantumCircuit(2)
+        circuit.h(0)
+        circuit.cx(0, 1)
+        circuit.measure_all()
+
+        qml_estimator = QMLEstimator()
+        config = VQCEstimationConfig(
+            num_parameters=4,
+            num_training_epochs=10,
+            gradient_method="spsa",
+        )
+        report = qml_estimator.estimate_vqc_training(
+            circuit, "ibm_heron", config
+        )
+
+        assert report.backend_name == "ibm_heron"
+        assert report.optimal_shots > 0
+        assert report.estimated_execution_time_ms > 0
+        assert "VQC training" in str(report.notes)
+        assert "spsa" in str(report.notes)
+
+    def test_vqc_parameter_shift(self):
+        """Test VQC with parameter-shift gradient."""
+        from qiskit import QuantumCircuit
+        from qpu_estimator.qml_estimator import QMLEstimator, VQCEstimationConfig
+
+        circuit = QuantumCircuit(2)
+        circuit.h(0)
+        circuit.cx(0, 1)
+        circuit.measure_all()
+
+        qml_estimator = QMLEstimator()
+        config = VQCEstimationConfig(
+            num_parameters=4,
+            num_training_epochs=5,
+            gradient_method="parameter-shift",
+        )
+        report = qml_estimator.estimate_vqc_training(
+            circuit, "ibm_heron", config
+        )
+
+        # Parameter-shift needs 2*params gradient evals
+        assert "parameter-shift" in str(report.notes)
+        assert report.optimal_shots > 0
+
+    def test_maml_estimation(self):
+        """Test MAML resource estimation."""
+        from qiskit import QuantumCircuit
+        from qpu_estimator.qml_estimator import QMLEstimator, MAMLEstimationConfig
+
+        circuit = QuantumCircuit(2)
+        circuit.h(0)
+        circuit.cx(0, 1)
+        circuit.measure_all()
+
+        qml_estimator = QMLEstimator()
+        config = MAMLEstimationConfig(
+            num_tasks=5,
+            inner_loop_steps=3,
+            outer_loop_steps=10,
+        )
+        report = qml_estimator.estimate_maml(circuit, "ibm_heron", config)
+
+        assert report.backend_name == "ibm_heron"
+        assert "MAML" in str(report.notes)
+        assert "5 tasks" in str(report.notes)
+        assert report.optimal_shots > 0
+
+    def test_transfer_learning_estimation(self):
+        """Test quantum transfer learning estimation."""
+        from qiskit import QuantumCircuit
+        from qpu_estimator.qml_estimator import QMLEstimator, TransferLearningConfig
+
+        quantum_circuit = QuantumCircuit(2)
+        quantum_circuit.h(0)
+        quantum_circuit.cx(0, 1)
+        quantum_circuit.measure_all()
+
+        qml_estimator = QMLEstimator()
+        config = TransferLearningConfig(
+            classical_layers=3,
+            quantum_layers=2,
+            frozen_classical=True,
+            fine_tune_epochs=20,
+        )
+        report = qml_estimator.estimate_transfer_learning(
+            quantum_circuit, "ibm_heron", config
+        )
+
+        assert report.backend_name == "ibm_heron"
+        assert "Transfer learning" in str(report.notes)
+        assert "20 fine-tune epochs" in str(report.notes)
+        assert report.optimal_shots > 0
+
+    def test_qml_fidelity_degradation(self):
+        """Test that repeated evaluations degrade fidelity."""
+        from qiskit import QuantumCircuit
+        from qpu_estimator.qml_estimator import QMLEstimator, VQCEstimationConfig
+
+        circuit = QuantumCircuit(2)
+        circuit.h(0)
+        circuit.cx(0, 1)
+        circuit.measure_all()
+
+        qml_estimator = QMLEstimator()
+        base = qml_estimator.base_estimator.estimate(circuit, "ibm_heron")
+
+        config = VQCEstimationConfig(
+            num_parameters=2,
+            num_training_epochs=100,
+            gradient_method="spsa",
+        )
+        vqc = qml_estimator.estimate_vqc_training(circuit, "ibm_heron", config)
+
+        # VQC fidelity should be lower than single evaluation due to repeated runs
+        assert vqc.estimated_fidelity <= base.estimated_fidelity
+
+
 class TestPhase1Integration:
     """Integration tests for Phase 1 features."""
 

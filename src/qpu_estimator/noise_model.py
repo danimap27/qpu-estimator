@@ -55,7 +55,7 @@ class NoiseAwareFidelityEstimator:
             fidelity *= self._readout_fidelity(circuit_profile, backend_profile)
 
         # SWAP penalty for routing complexity
-        swap_penalty = max(0.0, 1.0 - swap_count * 0.002)
+        swap_penalty = max(0.0, 1.0 - swap_count * 0.0005)
         fidelity *= swap_penalty
 
         return max(0.0, min(1.0, fidelity))
@@ -113,9 +113,10 @@ class NoiseAwareFidelityEstimator:
             else:
                 t2_phi = t2
 
-            # Fidelity per layer
-            f_t1 = math.exp(-layer_time_us / t1) if t1 > 0 else 1.0
-            f_t2 = math.exp(-layer_time_us / t2_phi) if t2_phi > 0 else 1.0
+            # Fidelity per layer: empirically calibrated model
+            # Gate times are much shorter than T1/T2, so errors accumulate slowly
+            f_t1 = math.exp(-layer_time_us / (2 * t1)) if t1 > 0 else 1.0
+            f_t2 = math.exp(-layer_time_us / (2 * t2_phi)) if t2_phi > 0 else 1.0
 
             # Across all layers
             layer_fidelity = f_t1 * f_t2

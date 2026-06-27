@@ -561,6 +561,138 @@ class TestPhase3QMLSpecialization:
         assert vqc.estimated_fidelity <= base.estimated_fidelity
 
 
+class TestTrainingTimeEstimator:
+    """Tests for TrainingTimeEstimator."""
+
+    def test_basic_time_estimation(self):
+        """Test basic training time estimation."""
+        from qiskit import QuantumCircuit
+        from qpu_estimator import TrainingTimeEstimator
+
+        circuit = QuantumCircuit(2)
+        circuit.h(0)
+        circuit.cx(0, 1)
+        circuit.measure_all()
+
+        time_estimator = TrainingTimeEstimator()
+        result = time_estimator.estimate_full_experiment(
+            circuit=circuit,
+            backend_name="ibm_heron",
+            n_samples=1000,
+            batch_size=32,
+            n_epochs=10,
+            gradient_method="spsa",
+            plan_priority="open",
+        )
+
+        assert result["total_time_hours"] > 0
+        assert result["n_batches"] == 32  # ceil(1000/32) = 32
+        assert result["quantum_evals_per_batch"] == 3  # SPSA
+        assert len(result["recommendations"]) > 0
+
+    def test_session_mode_speedup(self):
+        """Test that session mode is faster than standard."""
+        from qiskit import QuantumCircuit
+        from qpu_estimator import TrainingTimeEstimator
+
+        circuit = QuantumCircuit(2)
+        circuit.h(0)
+        circuit.cx(0, 1)
+        circuit.measure_all()
+
+        time_estimator = TrainingTimeEstimator()
+        
+        standard = time_estimator.estimate_full_experiment(
+            circuit=circuit,
+            backend_name="ibm_heron",
+            n_samples=1000,
+            batch_size=32,
+            n_epochs=10,
+            plan_priority="open",
+        )
+        
+        session = time_estimator.estimate_with_session(
+            circuit=circuit,
+            backend_name="ibm_heron",
+            n_samples=1000,
+            batch_size=32,
+            n_epochs=10,
+            plan_priority="open",
+        )
+
+        assert session["total_time_hours"] < standard["total_time_hours"]
+        assert session["speedup_vs_standard"] > 1.0
+        assert session["mode"] == "session"
+
+    def test_plan_priority_comparison(self):
+        """Test that premium plan has less queue time."""
+        from qiskit import QuantumCircuit
+        from qpu_estimator import TrainingTimeEstimator
+
+        circuit = QuantumCircuit(2)
+        circuit.h(0)
+        circuit.cx(0, 1)
+        circuit.measure_all()
+
+        time_estimator = TrainingTimeEstimator()
+        
+        open_result = time_estimator.estimate_full_experiment(
+            circuit=circuit,
+            backend_name="ibm_heron",
+            n_samples=100,
+            batch_size=10,
+            n_epochs=2,
+            plan_priority="open",
+        )
+        
+        premium_result = time_estimator.estimate_full_experiment(
+            circuit=circuit,
+            backend_name="ibm_heron",
+            n_samples=100,
+            batch_size=10,
+            n_epochs=2,
+            plan_priority="premium",
+        )
+
+        assert premium_result["queue_time_ms"] < open_result["queue_time_ms"]
+        assert premium_result["total_time_hours"] < open_result["total_time_hours"]
+
+    def test_gradient_method_comparison(self):
+        """Test that parameter-shift requires more evals than SPSA."""
+        from qiskit import QuantumCircuit
+        from qpu_estimator import TrainingTimeEstimator
+
+        circuit = QuantumCircuit(2)
+        circuit.h(0)
+        circuit.cx(0, 1)
+        circuit.measure_all()
+
+        time_estimator = TrainingTimeEstimator()
+        
+        spsa = time_estimator.estimate_full_experiment(
+            circuit=circuit,
+            backend_name="ibm_heron",
+            n_samples=100,
+            batch_size=10,
+            n_epochs=2,
+            gradient_method="spsa",
+            n_params=4,
+        )
+        
+        ps = time_estimator.estimate_full_experiment(
+            circuit=circuit,
+            backend_name="ibm_heron",
+            n_samples=100,
+            batch_size=10,
+            n_epochs=2,
+            gradient_method="parameter-shift",
+            n_params=4,
+        )
+
+        assert ps["quantum_evals_per_batch"] > spsa["quantum_evals_per_batch"]
+        assert ps["total_time_hours"] >= spsa["total_time_hours"]
+
+
 class TestPhase4Ecosystem:
     """Tests for Phase 4 — Ecosystem."""
 
